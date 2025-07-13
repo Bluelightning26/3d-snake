@@ -294,7 +294,7 @@ def game_loop():
         move()
         draw()
         show_score()
-        time.sleep(0.15)
+        time.sleep(0.1)
         
 
 if(current_score > high_score):
@@ -306,4 +306,3 @@ game_loop()
 
 
 # END OF GAME
-
