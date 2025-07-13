@@ -2,7 +2,7 @@ import board
 import neopixel
 import time
 import random
-import digitalio
+import analogio
 
 # Two separate NeoPixel strips
 pixels_panels_1_4 = neopixel.NeoPixel(board.GP0, 256, auto_write=False)  # Panels 1-4
@@ -16,24 +16,24 @@ WIDTH = 8
 HEIGHT = 8
 PANEL_OFFSET = [0, 64, 128, 192]  # Only panels 1-4 now
 
-JOYSTICK_X = digitalio.DigitalInOut(board.GP26)
-JOYSTICK_X.direction = digitalio.Direction.INPUT
-JOYSTICK_X.pull = digitalio.Pull.UP
+# Use analog inputs for joystick axes
+JOYSTICK_X = analogio.AnalogIn(board.GP26)
+JOYSTICK_Y = analogio.AnalogIn(board.GP27)
 
-JOYSTICK_Y = digitalio.DigitalInOut(board.GP27)
-JOYSTICK_Y.direction = digitalio.Direction.INPUT
-JOYSTICK_Y.pull = digitalio.Pull.UP
+# Joystick center analog values
+CENTER_X = 51196
+CENTER_Y = 48571
+
+# Max analog value for scaling (16-bit ADC max)
+MAX_ANALOG = 65535
 
 snake = [(4, 4, 1)]
 direction = (1, 0, 0)
 apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
-last_x = None
-last_y = None
 
 def coord_to_index(x, y, z):
     """Convert 3D coordinates to pixel index"""
     if z == 5:  # Panel 5 is separate and needs flipping
-        # Flip both horizontally and vertically for panel 5
         flipped_x = x  # Keep x as is
         flipped_y = y  # Keep y as is
         return flipped_y * 8 + flipped_x
@@ -55,121 +55,82 @@ def wrap_position(x, y, z, dx, dy, dz):
     """Wrap position based on exact cube topology schematic"""
     nx, ny, nz = x + dx, y + dy, z + dz
     
-    # If within bounds, no wrapping needed
     if 0 <= nx < 8 and 0 <= ny < 8 and 1 <= nz <= 5:
         return (nx, ny, nz), (dx, dy, dz)
     
-    # Handle wrapping based on which edge we're crossing
-    
-    # LEFT EDGE WRAPPING (x becomes -1)
     if nx == -1:
-        if z == 1:  # Panel 1 left → Panel 2 right
+        if z == 1:
             return (7, y, 2), (dx, dy, dz)
-        elif z == 2:  # Panel 2 left → Panel 3 right
+        elif z == 2:
             return (7, y, 3), (dx, dy, dz)
-        elif z == 3:  # Panel 3 left → Panel 4 right
+        elif z == 3:
             return (7, y, 4), (dx, dy, dz)
-        elif z == 4:  # Panel 4 left → Panel 1 right
+        elif z == 4:
             return (7, y, 1), (dx, dy, dz)
-        elif z == 5:  # Panel 5 left → Panel 4 top (moving down from Panel 4's perspective)
-            return (y, 0, 4), (0, 1, 0)  # Direction becomes "down" on Panel 4
+        elif z == 5:
+            return (y, 0, 4), (0, 1, 0)
     
-    # RIGHT EDGE WRAPPING (x becomes 8)
     elif nx == 8:
-        if z == 1:  # Panel 1 right → Panel 4 left
+        if z == 1:
             return (0, y, 4), (dx, dy, dz)
-        elif z == 2:  # Panel 2 right → Panel 1 left
+        elif z == 2:
             return (0, y, 1), (dx, dy, dz)
-        elif z == 3:  # Panel 3 right → Panel 2 left
+        elif z == 3:
             return (0, y, 2), (dx, dy, dz)
-        elif z == 4:  # Panel 4 right → Panel 3 left
+        elif z == 4:
             return (0, y, 3), (dx, dy, dz)
-        elif z == 5:  # Panel 5 right → Panel 2 top (moving down from Panel 2's perspective)
-            return (7 - y, 0, 2), (0, 1, 0)  # Direction becomes "down" on Panel 2
+        elif z == 5:
+            return (7 - y, 0, 2), (0, 1, 0)
     
-    # TOP EDGE WRAPPING (y becomes -1, remember y=0 is TOP)
     elif ny == -1:
-        if z == 1:  # Panel 1 top → Panel 5 bottom
-            return (7 - x, 0, 5), (0, 1, 0)  # Moving up on Panel 5
-        elif z == 2:  # Panel 2 top → Panel 5 right
-            return (7, 7 - x, 5), (-1, 0, 0)  # Moving left on Panel 5
-        elif z == 3:  # Panel 3 top → Panel 5 top
-            return (x, 7, 5), (0, -1, 0)  # Moving down on Panel 5
-        elif z == 4:  # Panel 4 top → Panel 5 left
-            return (0, x, 5), (1, 0, 0)  # Moving right on Panel 5
-        elif z == 5:  # Panel 5 top → Panel 3 top (moving down from Panel 3's perspective)
-            return (7-x, 0, 1), (0, 1, 0)  # Direction becomes "down" on Panel 3
+        if z == 1:
+            return (7 - x, 0, 5), (0, 1, 0)
+        elif z == 2:
+            return (7, 7 - x, 5), (-1, 0, 0)
+        elif z == 3:
+            return (x, 7, 5), (0, -1, 0)
+        elif z == 4:
+            return (0, x, 5), (1, 0, 0)
+        elif z == 5:
+            return (7 - x, 0, 1), (0, 1, 0)
     
-    # BOTTOM EDGE WRAPPING (y becomes 8)
     elif ny == 8:
-        if z == 5:  # Panel 5 bottom → Panel 1 top (moving down from Panel 1's perspective)
-            return (x, 0, 3), (0, 1, 0)  # Direction becomes "down" on Panel 1
+        if z == 5:
+            return (x, 0, 3), (0, 1, 0)
         else:
-            # Bottom edges of panels 1-4 don't wrap anywhere
-            return None, None
-    
-    return None, None
+            return None
 
-def read_joystick():
-    global last_x, last_y, direction
-    x = JOYSTICK_X.value
-    y = JOYSTICK_Y.value
-    
-    # Handle X-axis changes (left/right)
-    if x != last_x and last_x is not None:
-        if not x:  # X button pressed (True to False transition)
-            direction = turn_left(direction)
-        last_x = x
-    
-    # Handle Y-axis changes (up/down) - separate from X-axis
-    if y != last_y and last_y is not None:
-        if not y:  # Y button pressed (True to False transition)
-            direction = turn_up(direction)
-        else:  # Y button released (False to True transition)
-            direction = turn_down(direction)
-        last_y = y
-    
-    # Initialize on first run
-    if last_x is None:
-        last_x = x
-    if last_y is None:
-        last_y = y
+    return None
 
-def turn_left(current_dir):
-    dx, dy, dz = current_dir
-    if dx == 1 and dy == 0:
-        return (0, -1, 0)
-    elif dx == -1 and dy == 0:
-        return (0, 1, 0)
-    elif dx == 0 and dy == 1:
-        return (1, 0, 0)
-    elif dx == 0 and dy == -1:
-        return (-1, 0, 0)
-    return current_dir
+def read_joystick_analog():
+    global direction
 
-def turn_right(current_dir):
-    dx, dy, dz = current_dir
-    if dx == 1 and dy == 0:
-        return (0, 1, 0)
-    elif dx == -1 and dy == 0:
-        return (0, -1, 0)
-    elif dx == 0 and dy == 1:
-        return (-1, 0, 0)
-    elif dx == 0 and dy == -1:
-        return (1, 0, 0)
-    return current_dir
+    raw_x = JOYSTICK_X.value
+    raw_y = JOYSTICK_Y.value
 
-def turn_up(current_dir):
-    dx, dy, dz = current_dir
-    if dz == 0:
-        return (0, -1, 0)
-    return current_dir
+    diff_x = raw_x - CENTER_X
+    diff_y = raw_y - CENTER_Y
 
-def turn_down(current_dir):
-    dx, dy, dz = current_dir
-    if dz == 0:
-        return (0, 1, 0)
-    return current_dir
+    scaled_x = int(diff_x * 100 / (MAX_ANALOG // 2))
+    scaled_y = int(diff_y * 100 / (MAX_ANALOG // 2))
+
+    print(f"Joystick analog position: X={raw_x}, Y={raw_y} | Scaled from center: X={scaled_x}%, Y={scaled_y}%")
+
+    threshold = 30      # Minimum movement to register a direction
+    leeway = 20         # Allow some leeway (%)
+
+    # Check horizontal dominant direction with leeway on vertical
+    if abs(scaled_x) > threshold and abs(scaled_y) <= abs(scaled_x) + leeway:
+        if scaled_x > 0:
+            direction = (1, 0, 0)   # Right
+        else:
+            direction = (-1, 0, 0)  # Left
+    # Check vertical dominant direction with leeway on horizontal
+    elif abs(scaled_y) > threshold and abs(scaled_x) <= abs(scaled_y) + leeway:
+        if scaled_y > 0:
+            direction = (0, 1, 0)   # Down
+        else:
+            direction = (0, -1, 0)  # Up
 
 def draw():
     # Clear all pixels with dim green background
@@ -186,40 +147,40 @@ def draw():
     ax, ay, az = apple
     set_pixel(ax, ay, az, (255, 0, 0))
     
-    # Show both strips
     pixels_panels_1_4.show()
     pixels_panel_5.show()
 
 def move():
     global snake, apple, direction
-    read_joystick()
-    
+
+    read_joystick_analog()
+
     head = snake[-1]
-    new_pos, new_dir = wrap_position(*head, *direction)
-    
-    # Check for collision or invalid move
-    if new_pos is None or new_pos in snake:
-        # Reset game
-        snake = [(4, 4, 1)]
+    result = wrap_position(*head, *direction)
+    if result is None:
+        snake[:] = [(4, 4, 1)]
         direction = (1, 0, 0)
         apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
         return
-    
-    # Update direction if it changed due to wrapping
+    new_pos, new_dir = result
+
+    if new_pos is None or new_pos in snake:
+        snake[:] = [(4, 4, 1)]
+        direction = (1, 0, 0)
+        apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
+        return
+
     if new_dir != direction:
         direction = new_dir
-    
+
     snake.append(new_pos)
-    
-    # Check if apple was eaten
+
     if new_pos == apple:
-        # Generate new apple position
         while True:
             apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
             if apple not in snake:
                 break
     else:
-        # Remove tail if no apple eaten
         snake.pop(0)
 
 def game_loop():
@@ -229,5 +190,3 @@ def game_loop():
         time.sleep(0.2)
 
 game_loop()
-
-
