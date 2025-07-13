@@ -2,7 +2,6 @@
 | Name | Part No. | Quantity | Other |
 | :-: | :-: | :-: | :-: |
 | Orpheus Pico | OR2040 | 2 |  |
-| Raspberry Pi 3B+ | RPI3-MODBP | 1 |  |
 | 8x8 Neopixel Matrix | WS2812B-64 | 5 | https://www.digikey.com/en/products/detail/adafruit-industries-llc/1487/5154669 |
 | Solderless Breadboard Jumper Wires (Some Stripped, and ironically soldered) | - |  |  |
 | Breadboard | - |  |  |
@@ -14,5 +13,6 @@
 | Cherry MX Switch |  | 2 |  |
 | Keycaps |  | 2 |  |
 | Stepper Motor | 17HE15-1504S | 1 |  |
+| Stepper Motor Driver Carrier | DRV8825 | 1 |  |
 | 1.8# SPI TFT Module | MSP1803 |  |  |
 | Amplifier | MAX98357A | 1 |  |
