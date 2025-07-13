@@ -149,7 +149,7 @@ def game_loop():
     while True:
         move()
         draw()
-        time.sleep(0.2)
+        time.sleep(0.1)
 
 game_loop()
 
