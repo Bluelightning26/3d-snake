@@ -4,6 +4,10 @@ import time
 import random
 import analogio
 
+# === Joystick sensitivity settings ===
+JOYSTICK_THRESHOLD = 20  # How far from center to count as a movement (0–100)
+JOYSTICK_LEEWAY = 15     # How much to allow from the non-dominant axis
+
 # Two separate NeoPixel strips
 pixels_panels_1_4 = neopixel.NeoPixel(board.GP0, 256, auto_write=False)  # Panels 1-4
 pixels_panel_5 = neopixel.NeoPixel(board.GP3, 64, auto_write=False)      # Panel 5
@@ -32,17 +36,13 @@ direction = (1, 0, 0)
 apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
 
 def coord_to_index(x, y, z):
-    """Convert 3D coordinates to pixel index"""
-    if z == 5:  # Panel 5 is separate and needs flipping
-        flipped_x = x  # Keep x as is
-        flipped_y = y  # Keep y as is
-        return flipped_y * 8 + flipped_x
-    else:  # Panels 1-4
+    if z == 5:
+        return y * 8 + x
+    else:
         base = PANEL_OFFSET[z - 1]
         return base + (7 - y) * 8 + (7 - x)
 
 def set_pixel(x, y, z, color):
-    """Set a pixel on the appropriate strip"""
     index = coord_to_index(x, y, z)
     if z == 5:
         if 0 <= index < 64:
@@ -52,59 +52,39 @@ def set_pixel(x, y, z, color):
             pixels_panels_1_4[index] = color
 
 def wrap_position(x, y, z, dx, dy, dz):
-    """Wrap position based on exact cube topology schematic"""
     nx, ny, nz = x + dx, y + dy, z + dz
-    
     if 0 <= nx < 8 and 0 <= ny < 8 and 1 <= nz <= 5:
         return (nx, ny, nz), (dx, dy, dz)
-    
+
     if nx == -1:
-        if z == 1:
-            return (7, y, 2), (dx, dy, dz)
-        elif z == 2:
-            return (7, y, 3), (dx, dy, dz)
-        elif z == 3:
-            return (7, y, 4), (dx, dy, dz)
-        elif z == 4:
-            return (7, y, 1), (dx, dy, dz)
-        elif z == 5:
-            return (y, 0, 4), (0, 1, 0)
-    
+        if z == 1: return (7, y, 2), (dx, dy, dz)
+        elif z == 2: return (7, y, 3), (dx, dy, dz)
+        elif z == 3: return (7, y, 4), (dx, dy, dz)
+        elif z == 4: return (7, y, 1), (dx, dy, dz)
+        elif z == 5: return (y, 0, 4), (0, 1, 0)
+
     elif nx == 8:
-        if z == 1:
-            return (0, y, 4), (dx, dy, dz)
-        elif z == 2:
-            return (0, y, 1), (dx, dy, dz)
-        elif z == 3:
-            return (0, y, 2), (dx, dy, dz)
-        elif z == 4:
-            return (0, y, 3), (dx, dy, dz)
-        elif z == 5:
-            return (7 - y, 0, 2), (0, 1, 0)
-    
+        if z == 1: return (0, y, 4), (dx, dy, dz)
+        elif z == 2: return (0, y, 1), (dx, dy, dz)
+        elif z == 3: return (0, y, 2), (dx, dy, dz)
+        elif z == 4: return (0, y, 3), (dx, dy, dz)
+        elif z == 5: return (7 - y, 0, 2), (0, 1, 0)
+
     elif ny == -1:
-        if z == 1:
-            return (7 - x, 0, 5), (0, 1, 0)
-        elif z == 2:
-            return (7, 7 - x, 5), (-1, 0, 0)
-        elif z == 3:
-            return (x, 7, 5), (0, -1, 0)
-        elif z == 4:
-            return (0, x, 5), (1, 0, 0)
-        elif z == 5:
-            return (7 - x, 0, 1), (0, 1, 0)
-    
+        if z == 1: return (7 - x, 0, 5), (0, 1, 0)
+        elif z == 2: return (7, 7 - x, 5), (-1, 0, 0)
+        elif z == 3: return (x, 7, 5), (0, -1, 0)
+        elif z == 4: return (0, x, 5), (1, 0, 0)
+        elif z == 5: return (7 - x, 0, 1), (0, 1, 0)
+
     elif ny == 8:
-        if z == 5:
-            return (x, 0, 3), (0, 1, 0)
-        else:
-            return None
+        if z == 5: return (x, 0, 3), (0, 1, 0)
+        else: return None
 
     return None
 
 def read_joystick_analog():
     global direction
-
     raw_x = JOYSTICK_X.value
     raw_y = JOYSTICK_Y.value
 
@@ -116,37 +96,20 @@ def read_joystick_analog():
 
     print(f"Joystick analog position: X={raw_x}, Y={raw_y} | Scaled from center: X={scaled_x}%, Y={scaled_y}%")
 
-    threshold = 30      # Minimum movement to register a direction
-    leeway = 20         # Allow some leeway (%)
-
-    # Check horizontal dominant direction with leeway on vertical
-    if abs(scaled_x) > threshold and abs(scaled_y) <= abs(scaled_x) + leeway:
-        if scaled_x > 0:
-            direction = (1, 0, 0)   # Right
-        else:
-            direction = (-1, 0, 0)  # Left
-    # Check vertical dominant direction with leeway on horizontal
-    elif abs(scaled_y) > threshold and abs(scaled_x) <= abs(scaled_y) + leeway:
-        if scaled_y > 0:
-            direction = (0, 1, 0)   # Down
-        else:
-            direction = (0, -1, 0)  # Up
+    if abs(scaled_x) > JOYSTICK_THRESHOLD and abs(scaled_y) <= abs(scaled_x) + JOYSTICK_LEEWAY:
+        direction = (1, 0, 0) if scaled_x > 0 else (-1, 0, 0)
+    elif abs(scaled_y) > JOYSTICK_THRESHOLD and abs(scaled_x) <= abs(scaled_y) + JOYSTICK_LEEWAY:
+        direction = (0, 1, 0) if scaled_y > 0 else (0, -1, 0)
 
 def draw():
-    # Clear all pixels with dim green background
     for i in range(256):
         pixels_panels_1_4[i] = (0, 30, 0)
     for i in range(64):
         pixels_panel_5[i] = (0, 30, 0)
-    
-    # Draw snake in blue
     for x, y, z in snake:
         set_pixel(x, y, z, (0, 0, 255))
-    
-    # Draw apple in red
     ax, ay, az = apple
     set_pixel(ax, ay, az, (255, 0, 0))
-    
     pixels_panels_1_4.show()
     pixels_panel_5.show()
 
@@ -162,8 +125,8 @@ def move():
         direction = (1, 0, 0)
         apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
         return
-    new_pos, new_dir = result
 
+    new_pos, new_dir = result
     if new_pos is None or new_pos in snake:
         snake[:] = [(4, 4, 1)]
         direction = (1, 0, 0)
@@ -174,7 +137,6 @@ def move():
         direction = new_dir
 
     snake.append(new_pos)
-
     if new_pos == apple:
         while True:
             apple = (random.randint(0, 7), random.randint(0, 7), random.randint(1, 5))
@@ -190,3 +152,4 @@ def game_loop():
         time.sleep(0.2)
 
 game_loop()
+
