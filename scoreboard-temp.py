@@ -9,7 +9,7 @@ inputVolume = 10  # in percent
 volume = inputVolume / 100
 
 # === Display setup ===
-display1 = tm1637.TM1637(clk=board.GP26, dio=board.GP27)
+display1 = tm1637.TM1637(clk=board.GP22, dio=board.GP28)
 display1.brightness(0)
 
 display2 = tm1637.TM1637(clk=board.GP20, dio=board.GP21)
@@ -92,4 +92,5 @@ while True:
         melody_index = 0  # Loop the song
 
     time.sleep(0.005)
+
 
