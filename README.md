@@ -1,4 +1,4 @@
-# Title:::::::  Cubic snake
+# Cubic snake
 **Made at Undercity!**
 
 In this custom rendition of the classic game of snake we overhauled the experience. With features including a score counter, high score display, speaker, sound effect buzzer, calibrated joystick, and most importantly a custom implementation of a cubic matrix display that recognizes directionality among much more, there is plenty of fun to be had :) The whole console also rotates using a stepper motor when the snake slithers across displays so the user can always see where the snake is!
