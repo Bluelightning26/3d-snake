@@ -6,7 +6,7 @@ import analogio
 
 # === Joystick sensitivity settings ===
 JOYSTICK_THRESHOLD = 20  # How far from center to count as a movement (0–100)
-JOYSTICK_LEEWAY = 15     # How much to allow from the non-dominant axis
+JOYSTICK_LEEWAY = 10     # How much to allow from the non-dominant axis
 
 # Two separate NeoPixel strips
 pixels_panels_1_4 = neopixel.NeoPixel(board.GP0, 256, auto_write=False)  # Panels 1-4
@@ -149,7 +149,8 @@ def game_loop():
     while True:
         move()
         draw()
-        time.sleep(0.2)
+        time.sleep(0.1)
 
 game_loop()
+
 
