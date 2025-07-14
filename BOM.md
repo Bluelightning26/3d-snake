@@ -16,3 +16,4 @@
 | Stepper Motor Driver Carrier | DRV8825 | 1 |  |
 | 1.8# SPI TFT Module | MSP1803 |  |  |
 | Amplifier | MAX98357A | 1 |  |
+| Ultra Alkaline PICELL 9v Battery | 6LR61 | 2 |  |

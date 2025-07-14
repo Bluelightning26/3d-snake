@@ -1,3 +1,5 @@
+
+
 import board
 import neopixel
 import time
@@ -6,112 +8,254 @@ import analogio
 import pwmio
 import tm1637
 import digitalio
+import digitalio
+import time
+
+# === Motor Control Setup ===
+# GPIO pin assignments for DRV8825
+DIR_PIN = board.GP2    # Direction control
+STEP_PIN = board.GP8   # Step control
+SLP_PIN = board.GP4    # Sleep control (active HIGH)
+RST_PIN = board.GP5    # Reset control (active HIGH)
+FLT_PIN = board.GP6    # Fault pin (optional, active LOW when fault)
+EN_PIN = board.GP7     # Enable control (active LOW)
+
+# Initialize motor control pins
+dir_pin = digitalio.DigitalInOut(DIR_PIN)
+dir_pin.direction = digitalio.Direction.OUTPUT
+
+step_pin = digitalio.DigitalInOut(STEP_PIN)
+step_pin.direction = digitalio.Direction.OUTPUT
+
+sleep_pin = digitalio.DigitalInOut(SLP_PIN)
+sleep_pin.direction = digitalio.Direction.OUTPUT
+
+reset_pin = digitalio.DigitalInOut(RST_PIN)
+reset_pin.direction = digitalio.Direction.OUTPUT
+
+enable_pin = digitalio.DigitalInOut(EN_PIN)
+enable_pin.direction = digitalio.Direction.OUTPUT
+
+# Optional fault pin (input with pull-up)
+fault_pin = digitalio.DigitalInOut(FLT_PIN)
+fault_pin.direction = digitalio.Direction.INPUT
+fault_pin.pull = digitalio.Pull.UP
+
+# Motor configuration
+STEPS_PER_90_DEGREES = 50  # 90° rotation
+MAX_ROTATION_STEPS = 200   # 360° limit (4 * 50 steps)
+
+# Motor state tracking
+current_rotation_steps = 0  # Track total rotation from start position
+target_panel = 1  # Current target panel
 
 
-"""
-
-
-
-
-
-
-
-
-
-# === Volume control ===
-inputVolume = 10  # in percent
-volume = inputVolume / 100
-
-# === Display setup ===
-display1 = tm1637.TM1637(clk=board.GP22, dio=board.GP28)
-display1.brightness(0)
-
-display2 = tm1637.TM1637(clk=board.GP20, dio=board.GP21)
-display2.brightness(0)
-
-# === Buzzer setup on GP15 ===
-buzzer = pwmio.PWMOut(board.GP15, duty_cycle=0, frequency=440, variable_frequency=True)
-
-def play_note(freq):
-    global volume
-    buzzer.frequency = int(freq)
-    buzzer.duty_cycle = int(65530 * volume)
-
-def stop_note():
-    buzzer.duty_cycle = 0
-
-# === Button setup on GP17 ===
-button = digitalio.DigitalInOut(board.GP17)
-button.direction = digitalio.Direction.INPUT
-button.pull = digitalio.Pull.UP
-
-# === Melody sequence ===
-melody = [
-    130.81, 0, 130.81, 0, 196, 0, 196, 0, 220, 0, 220, 0, 196, 0,
-    174.61, 0, 174.61, 0, 164.81, 0, 164.81, 0, 146.83, 0, 146.83, 0, 130.81, 0,
-    196, 0, 196, 0, 174.61, 0, 174.61, 0, 164.81, 0, 164.81, 0, 146.83, 0,
-    196, 0, 196, 0, 174.61, 0, 174.61, 0, 164.81, 0, 164.81, 0, 146.83, 0,
-    130.81, 0, 130.81, 0, 196, 0, 196, 0, 220, 0, 220, 0, 196, 0,
-    174.61, 0, 174.61, 0, 164.81, 0, 164.81, 0, 146.83, 0, 146.83, 0,
-    130.81, 130.81, 130.81, 0
-]
-
-melody_index = 0
-note_start_time = time.monotonic()
-note_duration = 0.1  # seconds
-
-# === Counter state ===
-counter1 = 0
-counter2 = 0
-last_update = time.monotonic()
-
-# === Main loop ===
-while True:
-    now = time.monotonic()
-
-    # Reset counters if button is pressed
-    if not button.value:
-        counter1 = 0
-        counter2 = 0
-        display1.show("0000")
-        display2.show("0000")
-        time.sleep(0.2)  # Debounce delay
-
-    # Update counters every 0.1s
-    if now - last_update >= 0.1:
-        counter1 += 1
-        counter2 += 1
-
-        if counter1 > 9999:
-            counter1 = 0
-        if counter2 > 9999:
-            counter2 = 0
-
-        display1.show(f"{counter1:04d}")
-        display2.show(f"{counter2:04d}")
-
-        last_update = now
-
-    # Play melody one note at a time
-    if melody_index < len(melody):
-        if now - note_start_time >= note_duration:
-            freq = melody[melody_index]
-            if freq == 0:
-                stop_note()
-            else:
-                play_note(freq)
-            melody_index += 1
-            note_start_time = now
-    else:
-        melody_index = 0  # Loop the song
-
-    time.sleep(0.005)
+def init_motor():
+    """Initialize the DRV8825 driver"""
+    print("Initializing DRV8825 driver...")
     
+    # Enable driver (active LOW)
+    enable_pin.value = False
+    
+    # Enable driver (wake up from sleep)
+    sleep_pin.value = True
+    
+    # Release reset (active high)
+    reset_pin.value = True
+    
+    # Set initial direction
+    dir_pin.value = True  # True = CW, False = CCW
+    step_pin.value = False
+    
+    time.sleep(0.1)  # Allow driver to initialize
+    print("Driver initialized!")
+
+def check_motor_fault():
+    """Check if there's a fault condition"""
+    return not fault_pin.value  # Fault is active LOW
+
+
+def step_motor(steps=50, direction=True, delay=0.001):
     """
+    Step the motor
+    steps: number of steps to take
+    direction: True for clockwise, False for counter-clockwise
+    delay: delay between steps in seconds
+    """
+    if check_fault():
+        print("ERROR: Fault detected! Check wiring and power supply.")
+        return
+    
+    dir_pin.value = direction
+    print(f"Stepping {steps} steps {'CW' if direction else 'CCW'}")
+    
+    for i in range(steps):
+        step_pin.value = True
+        time.sleep(delay)
+        step_pin.value = False
+        time.sleep(delay)
+        
+        # Check fault every 100 steps
+        if i % 100 == 0 and check_fault():
+            print(f"Fault detected at step {i}!")
+            break
+
+def move_motor(clockwise=True, delay=0.001):
+    """
+    Move motor exactly 90 degrees (50 steps)
+    Based on the step_motor function from tester code
+    Returns True if successful, False if failed
+    """
+    global current_rotation_steps
+    
+    if check_motor_fault():
+        print("ERROR: Fault detected! Check wiring and power supply.")
+        return False
+    
+    # Set direction
+    dir_pin.value = clockwise
+    print(f"Stepping {STEPS_PER_90_DEGREES} steps {'CW' if clockwise else 'CCW'}")
+    
+    # Step the motor using the same pattern as tester code
+    for i in range(STEPS_PER_90_DEGREES):
+        step_pin.value = True
+        time.sleep(delay)
+        step_pin.value = False
+        time.sleep(delay)
+        
+        # Check fault every 10 steps (more frequent than tester's 100)
+        if i % 10 == 0 and check_motor_fault():
+            print(f"Fault detected at step {i}!")
+            return False
+    
+    # Update current position
+    if clockwise:
+        current_rotation_steps += STEPS_PER_90_DEGREES
+    else:
+        current_rotation_steps -= STEPS_PER_90_DEGREES
+    
+    print(f"Motor moved successfully. Current position: {current_rotation_steps} steps")
+    return True
+
+def calculate_rotation_to_panel(current_panel, target_panel):
+    """
+    Calculate how many 90° rotations needed to get from current to target panel
+    Returns (number_of_rotations, clockwise_direction)
+    Positive rotations = clockwise, negative = counter-clockwise
+    """
+    # Panel arrangement: 1(front) -> 2(right) -> 3(back) -> 4(left) -> 1...
+    diff = target_panel - current_panel
+    
+    # Normalize to shortest path
+    if diff > 2:
+        diff -= 4  # Go CCW instead
+    elif diff < -2:
+        diff += 4  # Go CW instead
+    
+    return diff  # Positive = CW, negative = CCW
+
+def rotate_to_panel(target_panel_num):
+    """
+    Rotate cube to show specified panel on the left
+    Handles 360° limit by choosing alternative direction if needed
+    """
+    global target_panel, current_rotation_steps
+    
+    if target_panel_num == target_panel:
+        return True  # Already at target
+    
+    # Calculate ideal rotation
+    rotations_needed = calculate_rotation_to_panel(target_panel, target_panel_num)
+    
+    # Check if ideal rotation would exceed limits
+    projected_steps = current_rotation_steps + (rotations_needed * STEPS_PER_90_DEGREES)
+    
+    if abs(projected_steps) > MAX_ROTATION_STEPS:
+        # Try opposite direction (non-ideal but within limits)
+        print(f"Ideal rotation would exceed 360° limit, trying opposite direction")
+        rotations_needed = -rotations_needed
+        if rotations_needed > 0:
+            rotations_needed = 4 - rotations_needed  # Go the long way around
+        else:
+            rotations_needed = -4 - rotations_needed  # Go the long way around
+        
+        projected_steps = current_rotation_steps + (rotations_needed * STEPS_PER_90_DEGREES)
+        
+        if abs(projected_steps) > MAX_ROTATION_STEPS:
+            print(f"Cannot rotate to panel {target_panel_num}: would exceed limits in both directions")
+            return False
+    
+    # Perform the rotation
+    clockwise = rotations_needed > 0
+    abs_rotations = abs(rotations_needed)
+    
+    print(f"Rotating {abs_rotations} steps to reach panel {target_panel_num}")
+    
+    for i in range(abs_rotations):
+        if not move_motor(clockwise):
+            print(f"Motor movement failed at rotation {i+1}")
+            return False
+        time.sleep(0.05)  # Small delay between 90° rotations
+    
+    target_panel = target_panel_num
+    print(f"Successfully rotated to panel {target_panel}")
+    return True
+
+
+def update_cube_rotation():
+    """
+    Update cube rotation based on snake head position
+    Call this function in your main game loop
+    """
+    if not snake:  # Safety check
+        return
+    
+    # Get snake head position
+    head_x, head_y, head_z = snake[-1]
+    
+    # Only rotate for lateral panels (1-4)
+    if head_z in [1, 2, 3, 4]:
+        # We want the snake's panel to be on the left
+        if head_z != target_panel:
+            print(f"Snake moved to panel {head_z}, rotating cube...")
+            if not rotate_to_panel(head_z):
+                print("Failed to rotate to optimal view")
+
+def reset_cube_rotation():
+    """
+    Reset cube to original position (panel 1 on left)
+    Call this when game resets
+    """
+    global target_panel, current_rotation_steps
+    
+    if current_rotation_steps == 0:
+        return  # Already at start position
+    
+    print("Resetting cube to original position...")
+    
+    # Calculate how many 90° rotations to get back to start
+    rotations_to_zero = -current_rotation_steps // STEPS_PER_90_DEGREES
+    
+    if rotations_to_zero != 0:
+        clockwise = rotations_to_zero > 0
+        abs_rotations = abs(rotations_to_zero)
+        
+        for i in range(abs_rotations):
+            if not move_motor(clockwise):
+                print(f"Reset failed at rotation {i+1}")
+                return False
+            time.sleep(0.05)
+    
+    target_panel = 1
+    current_rotation_steps = 0
+    print("Cube reset to original position")
+    return True
 
 
 
-# initialize score displys display
+
+
+# initialize score displys 
 
 # display1 = high score display
 display1 = tm1637.TM1637(clk=board.GP22, dio=board.GP28)
@@ -121,6 +265,10 @@ display1.brightness(0)
 # display2 = current score display
 display2 = tm1637.TM1637(clk=board.GP20, dio=board.GP21)
 display2.brightness(0)
+
+
+# initializes motor; ADD THIS TO YOUR INITIALIZATION SECTION (after display setup):
+init_motor()
 
 
 
@@ -248,6 +396,10 @@ def draw():
     pixels_panels_1_4.show()
     pixels_panel_5.show()
 
+
+
+
+
 def move():
     global snake, apple, direction
 
@@ -280,6 +432,8 @@ def move():
     else:
         snake.pop(0)
 
+    update_cube_rotation()
+
 def show_score():
 	global current_score, high_score
 	current_score = len(snake) - 1  # Score is the length of the snake minus the initial segment
@@ -295,6 +449,9 @@ def game_loop():
         draw()
         show_score()
         time.sleep(0.15)
+
+        if check_motor_fault():
+            print("Motor fault detected in game loop!")
         
 
 if(current_score > high_score):
@@ -303,7 +460,4 @@ if(current_score > high_score):
 
 game_loop()
 
-
-
-# END OF GAME
 
