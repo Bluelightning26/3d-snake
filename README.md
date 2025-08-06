@@ -1,6 +1,10 @@
 # Spinny Snake 3d
 **Made at Undercity!**
 
+
+![](https://hc-cdn.hel1.your-objectstorage.com/s/v3/49507ba0d461e21578c0a1add383ccdabdc3f74d_spinny_snaketest2.png)
+
+
 In this custom rendition of the classic game of snake we overhauled the experience. With features including a score counter, high score display, speaker, sound effect buzzer, calibrated joystick, and most importantly a custom implementation of a cubic matrix display that recognizes directionality among much more, there is plenty of fun to be had :) The whole console also rotates using a stepper motor when the snake slithers across displays so the user can always see where the snake is!
 
 ## Wiring (basics)
