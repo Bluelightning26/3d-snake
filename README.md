@@ -38,3 +38,8 @@ Depending on the version of game played, if you eat a mystery apple (orange and 
 
 ## Youtube Video Demo
 [https://www.youtube.com/shorts/mjqKc-JOmLc](https://www.youtube.com/shorts/mjqKc-JOmLc)
+
+
+## More info on Undercity
+[https://undercity.hackclub.com/](https://undercity.hackclub.com/)
+
